@@ -1,0 +1,9 @@
+.venv/
+.*_cache/
+__pycache__/
+*.py[cod]
+*.osi
+*.mcap
+dist/
+build/
+*.egg-info/
