@@ -36,11 +36,18 @@ def dimension3d(message: Any, bounding_box: Any) -> None:
     message.height = 2.0 * abs(_value(extent, "z"))
 
 
+def mounting_position(message: Any, transform: Any, *, flip_y: bool = True) -> None:
+    """Copy a CARLA relative transform into an OSI MountingPosition."""
+
+    vector3(message.position, transform.location, flip_y=flip_y)
+    orientation3d(message.orientation, transform.rotation, flip_yaw=flip_y)
+
+
 def timestamp(message: Any, seconds: float) -> None:
     """Write a floating-point simulation time to an OSI Timestamp."""
 
     whole = math.floor(float(seconds))
-    nanos = int(round((float(seconds) - whole) * 1_000_000_000))
+    nanos = round((float(seconds) - whole) * 1_000_000_000)
     if nanos >= 1_000_000_000:
         whole += 1
         nanos -= 1_000_000_000

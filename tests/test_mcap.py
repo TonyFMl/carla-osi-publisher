@@ -4,7 +4,19 @@ from osi_utilities import MultiTraceReader
 
 from carla_osi_publisher.config import GroundTruthConfig
 from carla_osi_publisher.groundtruth import GroundTruthBuilder
-from carla_osi_publisher.mcap import DualMcapWriter, McapConversionError, convert_osi_to_mcap
+from carla_osi_publisher.mcap import (
+    DualMcapWriter,
+    McapConversionError,
+    SensorViewMcapWriter,
+    SupportedMessagesMcapWriter,
+    convert_osi_to_mcap,
+)
+from carla_osi_publisher.sensorview import (
+    CameraSensorConfig,
+    CameraSensorViewBuilder,
+    LidarSensorConfig,
+    LidarSensorViewBuilder,
+)
 from carla_osi_publisher.streaming import StreamingUpdateBuilder
 from carla_osi_publisher.trace import write_length_prefixed_trace
 
@@ -95,3 +107,139 @@ def test_dual_mcap_writer_contains_groundtruth_and_streaming_channels(tmp_path) 
     assert len(messages) == 2
     assert messages[0].message.DESCRIPTOR.full_name == "osi3.GroundTruth"
     assert messages[1].message.DESCRIPTOR.full_name == "osi3.StreamingUpdate"
+
+
+def test_sensorview_mcap_writer_contains_camera_topics(tmp_path) -> None:
+    output_path = tmp_path / "sensor_view.mcap"
+    host_vehicle = FakeActor(7, "vehicle.tesla.model3")
+    image = type(
+        "Image",
+        (),
+        {
+            "width": 2,
+            "height": 1,
+            "timestamp": 1.25,
+            "raw_data": bytes([1, 2, 3, 4, 10, 20, 30, 40]),
+        },
+    )()
+    first = CameraSensorViewBuilder(
+        CameraSensorConfig(name="camera_left", width=2, height=1, yaw=-90.0)
+    ).build(image, type("Sensor", (), {"id": 11})(), host_vehicle)
+    second = CameraSensorViewBuilder(
+        CameraSensorConfig(name="camera_front", width=2, height=1)
+    ).build(image, type("Sensor", (), {"id": 12})(), host_vehicle)
+
+    with SensorViewMcapWriter(output_path, compression="none") as writer:
+        writer.write(first, "sensor_view/camera_left")
+        writer.write(second, "sensor_view/camera_front")
+
+    reader = MultiTraceReader()
+    assert reader.open(output_path)
+    assert reader.get_available_topics() == [
+        "sensor_view/camera_left",
+        "sensor_view/camera_front",
+    ]
+    messages = list(reader)
+    reader.close()
+
+    assert len(messages) == 2
+    assert all(
+        result.message.DESCRIPTOR.full_name == "osi3.SensorView"
+        for result in messages
+    )
+
+
+def test_sensorview_mcap_writer_contains_lidar_topic(tmp_path) -> None:
+    import struct
+
+    output_path = tmp_path / "sensor_view_lidar.mcap"
+    host_vehicle = FakeActor(7, "vehicle.tesla.model3")
+    measurement = type(
+        "LidarMeasurement",
+        (),
+        {
+            "timestamp": 1.25,
+            "frame": 10,
+            "raw_data": struct.pack("<8f", 4.0, 0.0, 0.0, 0.5, 0.0, 2.0, 1.0, 0.25),
+        },
+    )()
+    message = LidarSensorViewBuilder(
+        LidarSensorConfig(name="lidar_0", channels=2)
+    ).build(measurement, type("Sensor", (), {"id": 11})(), host_vehicle)
+
+    with SensorViewMcapWriter(output_path, compression="none") as writer:
+        writer.write(message, "sensor_view/lidar_0")
+
+    reader = MultiTraceReader()
+    assert reader.open(output_path)
+    assert reader.get_available_topics() == ["sensor_view/lidar_0"]
+    result = next(iter(reader))
+    reader.close()
+
+    assert result.message.DESCRIPTOR.full_name == "osi3.SensorView"
+    assert len(result.message.lidar_sensor_view[0].reflection) == 2
+
+
+def test_supported_messages_writer_contains_all_supported_topics(tmp_path) -> None:
+    import struct
+
+    output_path = tmp_path / "all_supported.mcap"
+    host_vehicle = FakeActor(7, "vehicle.tesla.model3")
+    world = FakeWorld([host_vehicle])
+    ground_truth = GroundTruthBuilder(GroundTruthConfig()).build(world).message
+    streaming_update = StreamingUpdateBuilder(GroundTruthConfig()).build(world).message
+    image = type(
+        "Image",
+        (),
+        {
+            "width": 1,
+            "height": 1,
+            "timestamp": 1.25,
+            "raw_data": bytes([1, 2, 3, 4]),
+        },
+    )()
+    camera = CameraSensorViewBuilder(
+        CameraSensorConfig(name="camera_front", width=1, height=1)
+    ).build(image, type("Sensor", (), {"id": 11})(), host_vehicle)
+    lidar = LidarSensorViewBuilder(
+        LidarSensorConfig(name="lidar_0", channels=2)
+    ).build(
+        type(
+            "LidarMeasurement",
+            (),
+            {
+                "timestamp": 1.25,
+                "raw_data": struct.pack("<4f", 4.0, 0.0, 0.0, 0.5),
+            },
+        )(),
+        type("Sensor", (), {"id": 12})(),
+        host_vehicle,
+    )
+
+    with SupportedMessagesMcapWriter(output_path, compression="none") as writer:
+        writer.write(ground_truth, "ground_truth")
+        writer.write(streaming_update, "streaming_update")
+        writer.write(camera, "sensor_view/camera_front")
+        writer.write(lidar, "sensor_view/lidar_0")
+
+    reader = MultiTraceReader()
+    assert reader.open(output_path)
+    assert reader.get_available_topics() == [
+        "ground_truth",
+        "streaming_update",
+        "sensor_view/camera_front",
+        "sensor_view/lidar_0",
+    ]
+    messages = list(reader)
+    reader.close()
+
+    assert len(messages) == 4
+    message_types = {
+        result.channel_name: result.message.DESCRIPTOR.full_name for result in messages
+    }
+    assert message_types == {
+        "ground_truth": "osi3.GroundTruth",
+        "streaming_update": "osi3.StreamingUpdate",
+        "sensor_view/camera_front": "osi3.SensorView",
+        "sensor_view/lidar_0": "osi3.SensorView",
+    }

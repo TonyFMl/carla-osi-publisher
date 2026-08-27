@@ -10,12 +10,11 @@ readme = "README.md"
 requires-python = ">=3.10"
 license = { text = "MPL-2.0" }
 dependencies = [
-    "asam-osi-utilities",
-    "mcap>=1.2.2",
-    "mcap-protobuf-support>=0.5.3",
-    "protobuf>=6.30.2,<7",
-    "osi-python",
+    "asam-osi-utilities>=0.4,<0.5",
     "carla==0.9.16",
+    "numpy>=1.24",
+    "osi-python==3.8.0",
+    "protobuf>=6.30.2,<7",
 ]
 
 [project.scripts]

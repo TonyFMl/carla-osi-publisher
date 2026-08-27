@@ -2,20 +2,43 @@
 
 from .config import GroundTruthConfig, PublisherConfig
 from .groundtruth import GroundTruthBuilder
-from .mcap import DualMcapWriter, McapConversionError, McapConversionResult, convert_osi_to_mcap
+from .mcap import (
+    DualMcapWriter,
+    McapConversionError,
+    McapConversionResult,
+    SensorViewMcapWriter,
+    SupportedMessagesMcapWriter,
+    convert_osi_to_mcap,
+)
+from .sensorview import (
+    CameraSensorCapture,
+    CameraSensorConfig,
+    CameraSensorViewBuilder,
+    LidarSensorCapture,
+    LidarSensorConfig,
+    LidarSensorViewBuilder,
+)
 from .streaming import StreamingUpdateBuilder, StreamingUpdateBuildResult
 from .version import OSI_VERSION, __version__
 
 __all__ = [
+    "OSI_VERSION",
+    "CameraSensorCapture",
+    "CameraSensorConfig",
+    "CameraSensorViewBuilder",
+    "DualMcapWriter",
     "GroundTruthBuilder",
     "GroundTruthConfig",
-    "DualMcapWriter",
+    "LidarSensorCapture",
+    "LidarSensorConfig",
+    "LidarSensorViewBuilder",
     "McapConversionError",
     "McapConversionResult",
-    "OSI_VERSION",
     "PublisherConfig",
+    "SensorViewMcapWriter",
     "StreamingUpdateBuildResult",
     "StreamingUpdateBuilder",
-    "convert_osi_to_mcap",
+    "SupportedMessagesMcapWriter",
     "__version__",
+    "convert_osi_to_mcap",
 ]

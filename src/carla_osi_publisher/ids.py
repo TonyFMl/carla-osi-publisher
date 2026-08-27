@@ -20,6 +20,7 @@ class IdMapper:
     actor_namespace: int = 1
     environment_namespace: int = 2
     traffic_light_namespace: int = 3
+    sensor_namespace: int = 5
     namespace_shift: int = 56
     _payload_by_source: dict[tuple[int, int], int] = field(
         default_factory=dict,
@@ -73,3 +74,6 @@ class IdMapper:
     def traffic_light(self, actor_id: int, bulb_index: int = 0) -> int:
         raw = (int(actor_id) << 8) | (int(bulb_index) & 0xFF)
         return self._encode(self.traffic_light_namespace, raw)
+
+    def sensor(self, actor_id: int) -> int:
+        return self._encode(self.sensor_namespace, int(actor_id))

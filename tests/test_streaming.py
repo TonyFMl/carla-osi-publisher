@@ -5,7 +5,16 @@ from types import SimpleNamespace
 from carla_osi_publisher.config import GroundTruthConfig
 from carla_osi_publisher.streaming import StreamingUpdateBuilder
 
-from .fakes import BoundingBox, EnvironmentObject, Extent, FakeActor, FakeWorld, Rotation, Transform, Vector
+from .fakes import (
+    BoundingBox,
+    EnvironmentObject,
+    Extent,
+    FakeActor,
+    FakeWorld,
+    Rotation,
+    Transform,
+    Vector,
+)
 
 
 def test_streaming_initial_frame_contains_static_objects_only_once() -> None:

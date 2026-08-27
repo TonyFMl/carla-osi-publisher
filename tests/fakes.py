@@ -56,20 +56,23 @@ class FakeActor:
         actor_id: int,
         type_id: str,
         *,
-        location: Vector = Vector(1.0, 2.0, 3.0),
-        velocity: Vector = Vector(4.0, 5.0, 0.0),
-        acceleration: Vector = Vector(0.1, 0.2, 0.0),
-        angular_velocity: Vector = Vector(0.0, 0.0, 10.0),
+        location: Vector | None = None,
+        velocity: Vector | None = None,
+        acceleration: Vector | None = None,
+        angular_velocity: Vector | None = None,
         attributes: list[Attribute] | None = None,
         light_state: int = 0,
     ) -> None:
         self.id = actor_id
         self.type_id = type_id
         self.bounding_box = BoundingBox(Vector(0.0, 0.0, 0.0), Extent(2.0, 1.0, 0.75))
-        self._transform = Transform(location, Rotation(yaw=90.0))
-        self._velocity = velocity
-        self._acceleration = acceleration
-        self._angular_velocity = angular_velocity
+        self._transform = Transform(
+            location or Vector(1.0, 2.0, 3.0),
+            Rotation(yaw=90.0),
+        )
+        self._velocity = velocity or Vector(4.0, 5.0, 0.0)
+        self._acceleration = acceleration or Vector(0.1, 0.2, 0.0)
+        self._angular_velocity = angular_velocity or Vector(0.0, 0.0, 10.0)
         self.attributes = attributes or []
         self._light_state = light_state
 
