@@ -20,6 +20,7 @@ def main() -> int:
     topics = reader.get_available_topics()
     print(f"file: {args.input}")
     print(f"topics: {topics}")
+    print(f"file_metadata: {reader.get_file_metadata()}")
 
     counts: dict[str, int] = {topic: 0 for topic in topics}
     schemas: dict[str, str] = {}

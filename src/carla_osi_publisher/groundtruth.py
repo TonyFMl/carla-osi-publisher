@@ -120,15 +120,17 @@ class GroundTruthBuilder:
         for actor in actors:
             if not str(getattr(actor, "type_id", "")).startswith("vehicle."):
                 continue
-            actor_id = int(getattr(actor, "id"))
+            actor_id = int(actor.id)
             if isinstance(requested, int) and actor_id == requested:
                 return actor_id
             if isinstance(requested, str) and requested.isdigit() and actor_id == int(requested):
                 return actor_id
             for attribute in self._attributes(actor):
-                if self._attribute_id(attribute) == "role_name":
-                    if self._attribute_value(attribute) == str(requested):
-                        return actor_id
+                if (
+                    self._attribute_id(attribute) == "role_name"
+                    and self._attribute_value(attribute) == str(requested)
+                ):
+                    return actor_id
         return None
 
     def _add_vehicle(self, message: Any, actor: Any) -> None:
@@ -178,16 +180,31 @@ class GroundTruthBuilder:
         self._set_number(target, "number_wheels", attributes.get("number_of_wheels"))
         self._set_number(target, "radius_wheel", attributes.get("wheel_radius"))
         self._set_number(target, "ground_clearance", attributes.get("ground_clearance"))
+        # CARLA does not expose OSI axle offsets as standard actor
+        # attributes.  Lichtblick uses bbcenter_to_rear to connect the
+        # vehicle bounding-box frame to the rear-axle frame, so provide a
+        # deterministic bounding-box approximation when the source does not
+        # provide explicit OSI values.
+        extent = getattr(getattr(actor, "bounding_box", None), "extent", None)
+        half_length = abs(float(getattr(extent, "x", 0.0)))
+        fallback = {
+            "bbcenter_to_front": {"x": half_length, "y": 0.0, "z": 0.0},
+            "bbcenter_to_rear": {"x": -half_length, "y": 0.0, "z": 0.0},
+        }
         for field_name, target_message in (
             ("bbcenter_to_front", target.bbcenter_to_front),
             ("bbcenter_to_rear", target.bbcenter_to_rear),
         ):
             for axis in ("x", "y", "z"):
                 key = f"{field_name}_{axis}"
-                if key in attributes:
-                    setattr(target_message, axis, float(attributes[key]))
-                    if self.config.flip_y and axis == "y":
-                        setattr(target_message, axis, -float(attributes[key]))
+                value = (
+                    float(attributes[key])
+                    if key in attributes
+                    else fallback[field_name][axis]
+                )
+                if self.config.flip_y and axis == "y":
+                    value = -value
+                setattr(target_message, axis, value)
 
     def _vehicle_type(self, actor: Any) -> int:
         values = {

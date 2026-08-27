@@ -3,74 +3,102 @@
 [English](README.en.md)
 
 基于 Python 的 CARLA 0.9.16 到 ASAM Open Simulation Interface（OSI）3.8.0
-消息转换程序。
+转换工具。当前版本支持录制 `GroundTruth`、`StreamingUpdate`，以及 RGB
+相机和 ray-cast LiDAR 的 `SensorView`，输出格式为 `.osi` 或 `.mcap`。
 
-CARLA 0.9.16 服务端需要用户单独下载、安装并启动。本项目不包含 CARLA
-服务端程序、地图和仿真资源。除 CARLA 服务端外，项目所需的 Python 依赖均
-从 PyPI 安装，并统一使用 `uv` 创建和管理虚拟环境。
+CARLA 0.9.16 服务端、地图和仿真资源需要用户自行安装并启动。本项目只连接
+CARLA 服务端，不包含或修改 CARLA 服务端。其余 Python 依赖均通过 PyPI
+安装，并统一使用 `uv` 管理。
 
 ## 项目功能
 
-当前 MVP 提供以下能力：
-
-- 将 CARLA 车辆和行人转换为 `osi3.GroundTruth`。
-- 转换 CARLA 静态环境对象、交通标志和交通灯。
-- 通过 actor ID 或 `role_name` 选择 ego 车辆。
-- 生成首帧完整、后续增量的 `osi3.StreamingUpdate`。
-- 在一个 MCAP 中同时输出 `ground_truth` 和 `streaming_update` 两个 channel。
-- 写入 OSI 文件 metadata、protobuf descriptor 和 channel metadata。
-- 对当前已填充的 GroundTruth 字段进行项目级校验。
-
-项目当前不负责传感器生成、相机或激光雷达数据转换，也不包含 UDP、ROS 2
-等实时网络发布器。
-
 ### OSI 支持矩阵
 
-当前只实现 CARLA 仿真状态到以下两种 OSI 消息的转换：
-
-| OSI 消息 | CARLA 转换 | `.osi` 输出 | `.mcap` 输出 |
+| OSI 消息 | CARLA 转换 | `.osi` | `.mcap` |
 | --- | :---: | :---: | :---: |
-| `osi3.GroundTruth` | ✅ | ✅ | ✅ 双 channel |
-| `osi3.StreamingUpdate` | ✅ | ✅ | ✅ 双 channel |
+| `osi3.GroundTruth` | ✅ | ✅ | ✅ |
+| `osi3.StreamingUpdate` | ✅ | ✅ | ✅ |
+| `osi3.SensorView`：RGB 相机 | ✅ | ✅ 单相机 | ✅ 每个相机独立 channel |
+| `osi3.SensorView`：ray-cast LiDAR | ✅ | ✅ | ✅ 独立 channel |
+| `osi3.SensorViewConfiguration` | ⚠️ 嵌入 `SensorView` | ❌ 独立消息 | ❌ 独立 channel |
+| `osi3.SensorData` | ❌ | ❌ | ❌ |
+| `osi3.TrafficUpdate` | ❌ | ❌ | ❌ |
 
-其他 OSI 消息暂不属于当前项目范围。
+当前实现还提供：
+
+- 使用 actor ID 或 `role_name` 选择 ego 车辆。
+- 生成首帧完整、后续增量的 `StreamingUpdate`。
+- 为 MCAP 写入 OSI、Protobuf 和 channel metadata。
+- 使用项目级 `GroundTruthValidator` 检查当前已实现字段。
+- 使用 `asam-osi-utilities` 将单类型 `.osi` trace 转换为 `.mcap`。
+
+不支持 Radar、Semantic LiDAR、深度相机、目标检测、SensorData、UDP 或 ROS 2
+实时发布。
 
 ## 快速开始
 
-以下示例假设 CARLA 0.9.16 服务端已经由用户单独安装并启动，并且可以通过
-`127.0.0.1:2000` 访问。
+### 1. 准备 CARLA 服务端
 
-### 1. 安装依赖
+单独安装并启动 CARLA 0.9.16 服务端。默认连接地址为
+`127.0.0.1:2000`。
 
-如果尚未安装 `uv`，Linux 或 WSL 中可以执行：
+在 WSL 中连接运行于 Windows 的 CARLA 服务端时，通常需要使用 Windows
+主机 IP
 
-```bash
-curl -LsSf https://astral.sh/uv/install.sh | sh
-```
+### 2. 安装 Python 环境
 
-在项目根目录执行下面一条命令即可创建虚拟环境并安装全部 Python 依赖：
+项目默认使用 Python 3.10。安装 `uv` 后，在仓库根目录执行：
 
 ```bash
 uv sync
 ```
 
-如果 publisher 在 WSL 中运行，CARLA Python API 需要安装在 WSL 的 Python
-环境中；连接 Windows CARLA 服务端时，通常应使用 Windows 主机 IP，而不是
-`127.0.0.1`。
+该命令会创建 `.venv` 并安装 CARLA Python API、`osi-python`、
+`asam-osi-utilities`、Protobuf、NumPy 和 MCAP 相关依赖。不需要单独下载
+`osi3`、`osi-python` 或 `asam-osi-utilities` 仓库，也不需要额外执行
+`pip install`。
 
-CARLA 服务端不由 `uv` 或 `pip` 安装。请从 CARLA 官方发行包单独安装并启动
-CARLA 0.9.16 服务端。
-
-检查安装结果：
+检查安装：
 
 ```bash
 uv run carla-osi --version
 ```
 
-### 2. 使用 CARLA 官方脚本生成交通
+### 3. 最小 Demo
 
-CARLA 官方 `generate_traffic.py` 可以生成自动驾驶车辆，并将其中一辆标记为
-`role_name=hero`：
+以下命令由 publisher 创建一辆 `charger_2020` ego 车辆，并在同步模式下录制
+5 秒数据：
+
+```bash
+uv run carla-osi record \
+  --host 127.0.0.1 \
+  --port 2000 \
+  --sync \
+  --duration-seconds 5 \
+  --demo-scene \
+  --no-static-objects \
+  --compression zstd \
+  --output carla_osi_demo.mcap
+```
+
+Demo 默认包含左、前、右、后四个 RGB 相机和一个 64 线 LiDAR：
+
+| Channel | Protobuf 类型 | 内容 |
+| --- | --- | --- |
+| `ground_truth` | `osi3.GroundTruth` | 当前 CARLA 世界状态 |
+| `streaming_update` | `osi3.StreamingUpdate` | 首帧完整、后续增量更新 |
+| `sensor_view/camera_0` | `osi3.SensorView` | 左侧 RGB 相机 |
+| `sensor_view/camera_1` | `osi3.SensorView` | 前方 RGB 相机 |
+| `sensor_view/camera_2` | `osi3.SensorView` | 右侧 RGB 相机 |
+| `sensor_view/camera_3` | `osi3.SensorView` | 后方 RGB 相机 |
+| `sensor_view/lidar_0` | `osi3.SensorView` | ray-cast LiDAR |
+
+`--no-static-objects` 用于避免每帧重复写入大量地图静态对象。需要完整静态环境
+时可移除该选项，但文件体积和转换时间会明显增加。
+
+## 使用已有交通场景
+
+CARLA 官方 `generate_traffic.py` 可以生成 15 辆交通车辆和 1 辆 ego 车辆：
 
 ```bash
 python3 /path/to/Carla/PythonAPI/examples/generate_traffic.py \
@@ -83,140 +111,140 @@ python3 /path/to/Carla/PythonAPI/examples/generate_traffic.py \
   --tm-port 8000
 ```
 
-在 Windows 环境中，如果系统没有 `python3` 命令，可将上面的 `python3`
-替换为 `python`。
-
-`--number-of-vehicles 16 --hero` 表示 15 辆交通车辆加 1 辆 ego 车辆。
-官方脚本默认作为同步主客户端持续推进 CARLA tick，请保持该终端运行。
-
-## 核心使用方式
-
-车辆生成后，在另一个终端执行下面的命令。录制完成后，在交通生成终端按
-`Ctrl+C` 停止。
-
-命令行入口为 `carla-osi groundtruth`。通过 `--update-mode` 选择消息类型，
-通过输出文件扩展名选择文件格式。
-
-### GroundTruth 输出 `.osi`
+该脚本默认持续推进 CARLA 同步 tick。保持脚本运行，并在另一个终端使用
+`--wait-for-tick` 录制：
 
 ```bash
+uv run carla-osi record \
+  --host 127.0.0.1 \
+  --port 2000 \
+  --ego hero \
+  --wait-for-tick \
+  --duration-seconds 5 \
+  --camera-yaw=-90 \
+  --camera-yaw=0 \
+  --camera-yaw=90 \
+  --camera-yaw=180 \
+  --no-static-objects \
+  --compression zstd \
+  --output traffic_capture.mcap
+```
+
+同一 CARLA 世界只能有一个同步主客户端：
+
+- publisher 自己推进仿真时使用 `--sync`。
+- `generate_traffic.py` 等其他客户端推进仿真时使用 `--wait-for-tick`。
+- 不要让两个客户端同时调用 `world.tick()`。
+
+## 输出格式
+
+### `.osi`
+
+`.osi` 是带 4 字节小端长度前缀的单类型 Protobuf trace。可分别录制：
+
+```bash
+# GroundTruth
 uv run carla-osi groundtruth \
   --host 127.0.0.1 \
   --port 2000 \
   --ego hero \
-  --sync \
+  --wait-for-tick \
   --duration-seconds 5 \
   --update-mode groundtruth \
   --output ground_truth.osi
-```
 
-### StreamingUpdate 输出 `.osi`
-
-```bash
+# StreamingUpdate
 uv run carla-osi groundtruth \
   --host 127.0.0.1 \
   --port 2000 \
   --ego hero \
-  --sync \
+  --wait-for-tick \
   --duration-seconds 5 \
   --update-mode streaming \
   --output streaming_update.osi
 ```
 
-首帧包含静态对象和交通标志，后续帧包含移动对象和交通灯更新。接收端需要
-保存对象状态并处理 `obsolete_id`。
+单个相机或 LiDAR 的 `SensorView` 也可以写入 `.osi`。多传感器录制应使用
+MCAP 的独立 channel。
 
-### 双通道输出 `.mcap`
+### `.mcap`
+
+`record` 直接生成多 channel MCAP。已有单类型 `.osi` 可以转换为 MCAP：
 
 ```bash
-uv run carla-osi groundtruth \
-  --host 127.0.0.1 \
-  --port 2000 \
-  --ego hero \
-  --sync \
-  --duration-seconds 5 \
-  --update-mode dual \
-  --output capture.mcap
+uv run carla-osi convert \
+  ground_truth.osi \
+  ground_truth.mcap \
+  --input-type GroundTruth \
+  --topic ground_truth \
+  --compression zstd
 ```
 
-该 MCAP 包含两个 channel：
+检查 MCAP 中的 topic、schema、消息数量和 metadata：
 
-| Channel | 消息 |
-| --- | --- |
-| `ground_truth` | `osi3.GroundTruth` |
-| `streaming_update` | `osi3.StreamingUpdate` |
+```bash
+uv run python examples/inspect_mcap.py carla_osi_demo.mcap
+```
 
 ## OSI MCAP 可视化
 
-生成的 OSI MCAP 包可以使用 Lichtblick 配合
+OSI MCAP 可以使用 Lichtblick 配合
 [asam-osi-converter 插件](https://github.com/Lichtblick-Suite/asam-osi-converter)
 进行可视化。
 
 ![Lichtblick 可视化 CARLA OSI MCAP 效果](docs/images/carla-osi-lichtblick-demo.png)
+![Sensorview keshihua xiaoguo](docs/images/sensorview.png)
+
+插件使用 `GroundTruth.host_vehicle_id` 和
+`vehicle_attributes.bbcenter_to_rear` 建立 `global`、ego 后轴及传感器坐标帧。
+Demo 会绑定明确的 ego actor ID；当 CARLA 未提供轴位置属性时，publisher
+使用车辆 bounding box 半长生成可重复的近似值。
 
 ## 详细支持范围
 
-### GroundTruth 字段覆盖
+### GroundTruth
 
-| OSI 区域 | 状态 | 当前实现 |
+| 区域 | 状态 | 当前实现 |
 | --- | --- | --- |
-| `GroundTruth.version` | 支持 | 固定为 OSI `3.8.0`。 |
-| `GroundTruth.timestamp` | 支持 | 使用 CARLA snapshot 仿真时间。 |
-| `GroundTruth.host_vehicle_id` | 支持 | 按数字 actor ID 或 `role_name` 查找。 |
-| `GroundTruth.moving_object` | 支持 | 转换 `vehicle.*` 和 `walker.pedestrian.*`。 |
-| 移动物体尺寸 | 支持 | 将 CARLA bounding box 转换为长度、宽度和高度。 |
-| 移动物体位姿 | 支持 | 转换位置和姿态，支持侧向轴翻转配置。 |
-| 移动物体速度 | 支持 | 使用 CARLA actor velocity。 |
-| 移动物体加速度 | 支持 | 使用 CARLA actor acceleration。 |
-| 移动物体角速度 | 支持 | 将 CARLA angular velocity 转换为 OSI orientation rate。 |
-| 车辆分类 | 部分支持 | 读取 `osi_vehicle_type` 或 `object_type`，否则为 `TYPE_UNKNOWN`。 |
-| 车辆属性 | 部分支持 | 车轮数、车轮半径、离地间隙和包围盒偏移量取决于 blueprint 属性。 |
-| 车辆灯光 | 部分支持 | 映射远光、近光、倒车灯、刹车灯和转向灯状态。 |
-| `stationary_object` | 支持 | 转换配置的 `CityObjectLabel` 环境对象。 |
-| 静态对象分类 | 部分支持 | 基础支持建筑、障碍物、电线杆、植被、墙体和桥梁等分类。 |
-| `traffic_sign` | 部分支持 | 支持限速、停车、让行以及 fallback 标志类型。 |
-| 交通标志数值 | 部分支持 | 从名称中解析限速数值和单位。 |
-| `traffic_light` | 部分支持 | 支持 ID、位姿、尺寸、颜色、模式和 icon。 |
-| 交通灯详细几何 | 未实现 | 不包含灯泡、箭头、车道关联和信号组。 |
-| Lane 网络 | 未实现 | 不包含完整 lane、lane boundary、reference line 和 OpenDRIVE 拓扑。 |
-| 环境条件 | 未实现 | 不转换 CARLA 天气和环境条件。 |
-| 主车内部数据 | 未实现 | 不输出独立的 `HostVehicleData`。 |
-| 传感器数据 | 未实现 | 不转换相机、激光雷达、雷达和检测结果。 |
+| 版本和时间戳 | ✅ | OSI `3.8.0`，使用 CARLA snapshot 仿真时间 |
+| Ego 引用 | ✅ | actor ID 或 `role_name` |
+| 车辆和行人 | ✅ | 位姿、尺寸、速度、加速度和角速度 |
+| 车辆分类 | ⚠️ | 读取 OSI/CARLA 属性，否则为 `TYPE_UNKNOWN` |
+| 车辆轴位置 | ⚠️ | 优先读取属性，否则按 bounding box 半长近似 |
+| 车辆灯光 | ⚠️ | 基础映射前灯、远光、倒车灯、刹车灯和转向灯 |
+| 静态环境对象 | ✅ | 转换配置的 `CityObjectLabel` |
+| 交通标志 | ⚠️ | 限速、停车、让行和 fallback 类型 |
+| 交通灯 | ⚠️ | ID、位姿、尺寸、颜色、模式和 icon |
+| Lane/OpenDRIVE 拓扑 | ❌ | 未实现 |
+| 天气和环境条件 | ❌ | 未实现 |
 
-### StreamingUpdate 字段覆盖
+### StreamingUpdate
 
 | 字段 | 状态 | 行为 |
 | --- | --- | --- |
-| `version` | 支持 | 设置为 OSI `3.8.0`。 |
-| `timestamp` | 支持 | 使用当前 CARLA snapshot 时间。 |
-| `stationary_object_update` | 支持 | 默认仅首帧发送。 |
-| `moving_object_update` | 支持 | 首帧和后续帧都发送。 |
-| `traffic_sign_update` | 支持 | 默认仅首帧发送。 |
-| `traffic_light_update` | 支持 | 首帧和后续帧都发送。 |
-| `environmental_conditions_update` | 未实现 | 不转换 CARLA 天气。 |
-| `host_vehicle_data_update` | 未实现 | 不转换主车内部数据。 |
-| `obsolete_id` | 支持 | 报告后续 snapshot 中消失的移动对象和交通灯。 |
+| `stationary_object_update` | ✅ | 默认仅首帧发送 |
+| `moving_object_update` | ✅ | 每帧发送 |
+| `traffic_sign_update` | ✅ | 默认仅首帧发送 |
+| `traffic_light_update` | ✅ | 每帧发送 |
+| `obsolete_id` | ✅ | 报告消失的移动对象和交通灯 |
+| 环境条件和主车内部数据 | ❌ | 未实现 |
 
-`StreamingUpdate` 是 OSI 标准定义的顶层消息，不是本项目自定义扩展。
-它是增量协议，接收端必须跨消息保存对象状态。MCAP 只负责存储消息和
-metadata，不会自动合并 StreamingUpdate。
+`StreamingUpdate` 是 OSI 标准顶层消息。消费端必须跨帧保存状态并处理
+`obsolete_id`；MCAP 不会自动将增量更新合并成完整场景。
 
-## 校验器
+### SensorView
 
-`GroundTruthValidator` 是针对当前 MVP 的项目级校验器，检查：
+| 区域 | 状态 | 当前实现 |
+| --- | --- | --- |
+| RGB 图像 | ✅ | CARLA BGRA 转换为 `RGB_U8_LIN` |
+| 相机标定 | ✅ | 分辨率、水平/垂直 FOV 和安装位姿 |
+| LiDAR 点云 | ✅ | 方向、双程飞行时间和信号强度 |
+| `sensor_id` / `host_vehicle_id` | ✅ | 使用独立 ID namespace 并引用 ego |
+| `global_ground_truth` | ❌ | 不嵌入 SensorView |
+| Radar、Semantic LiDAR、深度相机 | ❌ | 未实现 |
+| SensorData 检测和跟踪 | ❌ | 未实现 |
 
-- OSI interface version 存在且为 `3.8.0`。
-- timestamp 存在。
-- 使用 `--require-host-vehicle` 时，`host_vehicle_id` 存在。
-- 已支持对象的 ID 存在并且唯一。
-- 移动物体和静态物体的 base 字段存在。
-- 交通标志和交通灯的 base 字段存在。
-- `host_vehicle_id` 确实引用了一个移动物体。
-
-它不是完整的官方 OSI 一致性验证器。对于 CARLA 无法提供的数据，项目会保持
-字段未设置，而不是伪造数值。
-
-## 坐标系
+## 坐标和 ID
 
 默认坐标转换：
 
@@ -227,103 +255,49 @@ OSI.z   = CARLA.z
 OSI.yaw = -CARLA.yaw
 ```
 
-如果消费端要求使用 CARLA 原生侧向轴，使用 `--no-flip-y`。同一个 trace 内
-必须保持坐标转换方式一致。
+需要保留 CARLA 原生 Y 轴时使用 `--no-flip-y`。
 
-## ID 策略
+OSI ID 使用高 8 位 namespace：
 
-publisher 使用带 namespace 的 64 位 OSI ID：
-
-| 源实体 | Namespace |
+| 实体 | Namespace |
 | --- | ---: |
 | CARLA actor | 1 |
 | CARLA environment object | 2 |
-| CARLA traffic light 和 bulb index | 3 |
-| 未来 lane ID 预留 | 4 |
-
-namespace 用于避免 actor、环境对象和交通灯 ID 冲突。超出 OSI payload 范围的
-CARLA 环境对象 ID 会被确定性折叠，并在同一个 mapper 实例内处理冲突。
-
-## 架构
-
-```text
-CARLA 0.9.16 服务端
-        |
-        | CARLA Python API
-        v
-CarlaClient
-        |
-        v
-GroundTruthBuilder ------> osi3.GroundTruth
-        |
-        +-----------------> StreamingUpdateBuilder
-        |                           |
-        |                           v
-        |                   osi3.StreamingUpdate
-        v
-GroundTruthValidator
-        |
-        +--> length-prefixed .osi trace
-        +--> 单 channel MCAP
-        +--> 双 channel MCAP
-```
-
-运行时行为：
-
-- `--sync` 由 publisher 调用 `world.tick()`，退出时恢复原同步设置。
-- `--wait-for-tick` 观察其他 CARLA 客户端推进的 snapshot。
-- GroundTruth 模式先在内存中收集消息，再写入 `.osi`。
-- StreamingUpdate 模式增量写入消息。
-- Dual 模式增量写入两个 MCAP channel。
-- 当前没有网络发布器。
+| CARLA traffic light | 3 |
+| Lane 预留 | 4 |
+| CARLA sensor | 5 |
 
 ## 项目结构
 
 ```text
-src/
-  carla_osi_publisher/
-    carla.py       CARLA 连接和同步/异步步进
-    cli.py         carla-osi 命令行入口
-    config.py      publisher 和 GroundTruth 配置
-    geometry.py    坐标、位姿、尺寸和时间转换
-    groundtruth.py CARLA 到 GroundTruth 的转换
-    ids.py         OSI namespace ID 映射
-    mcap.py        单 channel 转换和双 channel MCAP writer
-    osi.py         OSI 与 CARLA 依赖的延迟加载
-    streaming.py   GroundTruth 到 StreamingUpdate 的转换
-    trace.py       长度前缀单 channel trace writer
-    validator.py   MVP GroundTruth 校验器
-    version.py     项目和 OSI 版本常量
+src/carla_osi_publisher/
+  carla.py       CARLA 连接和同步控制
+  cli.py         carla-osi 命令行入口
+  groundtruth.py GroundTruth 转换
+  streaming.py   StreamingUpdate 转换
+  sensorview.py  RGB 相机和 LiDAR SensorView 转换
+  mcap.py        OSI MCAP writer 和 .osi 转换
+  trace.py       长度前缀 .osi writer
+  validator.py   GroundTruth 项目级校验
 examples/
-  inspect_mcap.py  MCAP topic、schema、数量和 metadata Demo
+  inspect_mcap.py
 tests/
-  fakes.py       CARLA 形状测试替身
-  test_*.py      转换、校验、trace 和 MCAP 测试
-pyproject.toml   包元数据和 uv 配置
-uv.lock         可复现依赖锁文件
+docs/images/
 ```
+
+生成的 `.osi`、`.mcap`、虚拟环境、构建产物和缓存均已通过 `.gitignore`
+排除，不会进入仓库。
 
 ## 已知限制
 
-- CARLA 交通生成不属于 publisher CLI，需要使用 `generate_traffic.py` 或其他
-  交通客户端。
-- 尚无传感器回调和传感器创建逻辑。
-- 尚未输出完整 lane 拓扑和 OpenDRIVE 语义。
-- 交通标志和交通灯目前只有基础映射。
-- `asam-osi-converter` 当前可以可视化 `ground_truth` topic，但不会从
-  `streaming_update` topic 重建 3D 场景。
-- StreamingUpdate 消费端必须实现跨消息状态保存和 `obsolete_id` 处理。
-- CARLA 服务端和地图资源不随本项目发布，需要用户单独安装和准备。
-
-## 路线图
-
-1. 增加带生命周期管理的 CARLA 交通生成辅助工具。
-2. 增加相机、激光雷达和雷达的 `SensorView` 转换。
-3. 增加 `SensorViewConfiguration` 和传感器创建。
-4. 增加 `TrafficUpdate` 输入及外部 actor 状态应用。
-5. 增加 lane boundary、lane 拓扑和 OpenDRIVE 引用。
-6. 增加 UDP、ROS 2 和实时 MCAP 网络输出。
-7. 为可视化客户端增加原生 StreamingUpdate 状态重建。
+- CARLA 服务端、地图和场景资源不随项目发布。
+- `record --demo-scene` 只负责创建 ego 车辆，不生成完整交通流。
+- 完整静态 GroundTruth 会显著增加 CPU 开销和 MCAP 文件体积。
+- `.osi` 不适合表示多个独立传感器 channel。
+- `SensorViewConfiguration` 仅嵌入 SensorView，不独立发布。
+- `asam-osi-converter` 不会从 `streaming_update` 重建完整 3D 场景。
+- 当前没有 UDP、ROS 2 或其他实时网络 publisher。
+- `GroundTruthValidator` 是项目级检查，不等同于完整 OSI 一致性认证。
 
 ## 许可证
 

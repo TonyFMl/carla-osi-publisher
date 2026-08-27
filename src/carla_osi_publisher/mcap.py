@@ -131,6 +131,197 @@ class DualMcapWriter:
         self.close()
 
 
+class SensorViewMcapWriter:
+    """Write camera and LiDAR SensorView topics to an OSI MCAP file."""
+
+    def __init__(
+        self,
+        path: str | Path,
+        *,
+        compression: str | None = None,
+        chunk_size: int | None = None,
+        description: str | None = None,
+    ) -> None:
+        self.path = Path(path)
+        self.compression = compression
+        self.chunk_size = chunk_size
+        self.description = description
+        self._writer: Any | None = None
+        self._channel_metadata: dict[str, str] | None = None
+        self._topics: set[str] = set()
+        self.message_count = 0
+
+    def open(self) -> None:
+        if self.path.suffix.lower() != ".mcap":
+            raise McapConversionError(f"SensorView output must use the .mcap extension: {self.path}")
+
+        try:
+            from google.protobuf import __version__ as protobuf_version
+            from osi_utilities import MultiTraceWriter
+            from osi_utilities.tracefile import prepare_required_file_metadata
+        except ModuleNotFoundError as exc:
+            raise McapConversionError(
+                "asam-osi-utilities is unavailable. Run `uv sync` in the project."
+            ) from exc
+
+        metadata = prepare_required_file_metadata()
+        metadata.update(
+            {
+                "min_osi_version": OSI_VERSION.as_string(),
+                "max_osi_version": OSI_VERSION.as_string(),
+                "description": self.description or "CARLA camera and LiDAR SensorView capture",
+                "data_sources": "CARLA OSI Publisher",
+                "zero_time": "0",
+            }
+        )
+        self._channel_metadata = {
+            "net.asam.osi.trace.channel.osi_version": OSI_VERSION.as_string(),
+            "net.asam.osi.trace.channel.protobuf_version": protobuf_version,
+        }
+
+        writer = MultiTraceWriter()
+        writer_kwargs: dict[str, Any] = {}
+        if self.compression is not None:
+            writer_kwargs["compression"] = self.compression
+        if self.chunk_size is not None:
+            writer_kwargs["chunk_size"] = self.chunk_size
+        if not writer.open(self.path, metadata=metadata, **writer_kwargs):
+            raise McapConversionError(f"Could not open output MCAP file: {self.path}")
+        self._writer = writer
+
+    def write(self, message: Any, topic: str) -> None:
+        if self._writer is None or self._channel_metadata is None:
+            raise McapConversionError("SensorView MCAP writer is not open")
+        if topic not in self._topics:
+            channel_metadata = dict(self._channel_metadata)
+            channel_metadata["net.asam.osi.trace.channel.description"] = (
+                f"SensorView messages for {topic}"
+            )
+            self._writer.add_channel(
+                topic,
+                type(message),
+                metadata=channel_metadata,
+            )
+            self._topics.add(topic)
+        if not self._writer.write_message(message, topic):
+            raise McapConversionError(
+                f"Could not write SensorView message {self.message_count} to {self.path}"
+            )
+        self.message_count += 1
+
+    def close(self) -> None:
+        if self._writer is not None:
+            self._writer.close()
+            self._writer = None
+
+    def __enter__(self) -> SensorViewMcapWriter:
+        self.open()
+        return self
+
+    def __exit__(self, exc_type: object, exc_val: object, exc_tb: object) -> None:
+        self.close()
+
+
+class SupportedMessagesMcapWriter:
+    """Write every currently supported OSI message type to one MCAP file."""
+
+    def __init__(
+        self,
+        path: str | Path,
+        *,
+        compression: str | None = None,
+        chunk_size: int | None = None,
+        description: str | None = None,
+    ) -> None:
+        self.path = Path(path)
+        self.compression = compression
+        self.chunk_size = chunk_size
+        self.description = description
+        self._writer: Any | None = None
+        self._channel_metadata: dict[str, str] | None = None
+        self._topics: set[str] = set()
+        self.message_counts: dict[str, int] = {}
+        self.message_count = 0
+
+    def open(self) -> None:
+        if self.path.suffix.lower() != ".mcap":
+            raise McapConversionError(
+                f"All-supported output must use the .mcap extension: {self.path}"
+            )
+
+        try:
+            from google.protobuf import __version__ as protobuf_version
+            from osi_utilities import MultiTraceWriter
+            from osi_utilities.tracefile import prepare_required_file_metadata
+        except ModuleNotFoundError as exc:
+            raise McapConversionError(
+                "asam-osi-utilities is unavailable. Run `uv sync` in the project."
+            ) from exc
+
+        metadata = prepare_required_file_metadata()
+        metadata.update(
+            {
+                "min_osi_version": OSI_VERSION.as_string(),
+                "max_osi_version": OSI_VERSION.as_string(),
+                "description": self.description
+                or "CARLA all supported OSI message capture",
+                "data_sources": "CARLA OSI Publisher",
+                "zero_time": "0",
+            }
+        )
+        self._channel_metadata = {
+            "net.asam.osi.trace.channel.osi_version": OSI_VERSION.as_string(),
+            "net.asam.osi.trace.channel.protobuf_version": protobuf_version,
+        }
+
+        writer = MultiTraceWriter()
+        writer_kwargs: dict[str, Any] = {}
+        if self.compression is not None:
+            writer_kwargs["compression"] = self.compression
+        if self.chunk_size is not None:
+            writer_kwargs["chunk_size"] = self.chunk_size
+        if not writer.open(self.path, metadata=metadata, **writer_kwargs):
+            raise McapConversionError(f"Could not open output MCAP file: {self.path}")
+        self._writer = writer
+
+    def write(self, message: Any, topic: str, *, description: str | None = None) -> None:
+        if self._writer is None or self._channel_metadata is None:
+            raise McapConversionError("Supported-message MCAP writer is not open")
+        if not topic:
+            raise McapConversionError("MCAP topic must not be empty")
+
+        if topic not in self._topics:
+            channel_metadata = dict(self._channel_metadata)
+            channel_metadata["net.asam.osi.trace.channel.description"] = (
+                description or f"OSI messages for {topic}"
+            )
+            self._writer.add_channel(
+                topic,
+                type(message),
+                metadata=channel_metadata,
+            )
+            self._topics.add(topic)
+
+        if not self._writer.write_message(message, topic):
+            raise McapConversionError(
+                f"Could not write message {self.message_count} to {self.path}"
+            )
+        self.message_counts[topic] = self.message_counts.get(topic, 0) + 1
+        self.message_count += 1
+
+    def close(self) -> None:
+        if self._writer is not None:
+            self._writer.close()
+            self._writer = None
+
+    def __enter__(self) -> SupportedMessagesMcapWriter:
+        self.open()
+        return self
+
+    def __exit__(self, exc_type: object, exc_val: object, exc_tb: object) -> None:
+        self.close()
+
+
 def convert_osi_to_mcap(
     input_path: str | Path,
     output_path: str | Path,

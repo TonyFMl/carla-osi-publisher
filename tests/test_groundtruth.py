@@ -10,7 +10,17 @@ from carla_osi_publisher.groundtruth import GroundTruthBuilder
 from carla_osi_publisher.trace import write_length_prefixed_trace
 from carla_osi_publisher.validator import GroundTruthValidator
 
-from .fakes import Attribute, BoundingBox, EnvironmentObject, Extent, FakeActor, FakeWorld, Rotation, Transform, Vector
+from .fakes import (
+    Attribute,
+    BoundingBox,
+    EnvironmentObject,
+    Extent,
+    FakeActor,
+    FakeWorld,
+    Rotation,
+    Transform,
+    Vector,
+)
 
 
 def test_groundtruth_builder_and_validator() -> None:
@@ -36,6 +46,10 @@ def test_groundtruth_builder_and_validator() -> None:
     assert len(message.moving_object) == 2
     assert message.moving_object[0].base.position.y == -2.0
     assert message.moving_object[0].base.dimension.length == 4.0
+    assert message.moving_object[0].vehicle_attributes.HasField("bbcenter_to_front")
+    assert message.moving_object[0].vehicle_attributes.HasField("bbcenter_to_rear")
+    assert message.moving_object[0].vehicle_attributes.bbcenter_to_front.x == 2.0
+    assert message.moving_object[0].vehicle_attributes.bbcenter_to_rear.x == -2.0
 
     report = GroundTruthValidator().validate(message, require_host_vehicle=True)
     assert report.valid, report.errors
